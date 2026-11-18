@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p bin
 # Never leave a partial/rejected download behind, on any exit route.
-trap 'rm -f bin/herdr-nvim.tmp' EXIT
+trap 'rm -f bin/herdr-nvim.tmp bin/herdr-nvim.tmp.sha256' EXIT
 version=$(sed -n 's/^version = "\(.*\)"/\1/p' herdr-plugin.toml | head -1)
 case "$(uname -s)-$(uname -m)" in
   Darwin-arm64)  target=aarch64-apple-darwin ;;
@@ -14,7 +14,10 @@ case "$(uname -s)-$(uname -m)" in
   Linux-aarch64) target=aarch64-unknown-linux-gnu ;;
   *) target="" ;;
 esac
-url="https://github.com/ChmaraX/herdr-nvim/releases/download/v${version}/herdr-nvim-${target}"
+# HERDR_NVIM_RELEASE_BASE is for tests/install-unix.sh, which serves a
+# stand-in release; nothing else sets it.
+base=${HERDR_NVIM_RELEASE_BASE:-https://github.com/ChmaraX/herdr-nvim/releases/download}
+url="${base}/v${version}/herdr-nvim-${target}"
 
 build_from_source() {
   if ! command -v cargo >/dev/null; then
@@ -27,7 +30,27 @@ build_from_source() {
   chmod +x bin/herdr-nvim
 }
 
-if [ -n "$target" ] && curl -fsSL "$url" -o bin/herdr-nvim.tmp; then
+sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1
+}
+
+# The download matches the .sha256 the release publishes beside it. Checked
+# before anything runs it (the probe below does): a release without one is
+# treated like a mismatch, so a stripped .sha256 can't switch the check off.
+verified() {
+  if ! curl -fsSL "${url}.sha256" -o bin/herdr-nvim.tmp.sha256; then
+    echo "herdr-nvim: v${version} publishes no SHA-256 for herdr-nvim-${target}; not running the download" >&2
+    return 1
+  fi
+  # `<hash>  <name>`, or `<hash> *<name>`; either case; maybe a CRLF.
+  want=$(head -n 1 bin/herdr-nvim.tmp.sha256 | tr -d '\r' | cut -d' ' -f1 | tr 'A-F' 'a-f')
+  if [ "$(sha256 bin/herdr-nvim.tmp)" != "$want" ]; then
+    echo "herdr-nvim: the download does not match its SHA-256; not running it" >&2
+    return 1
+  fi
+}
+
+if [ -n "$target" ] && curl -fsSL "$url" -o bin/herdr-nvim.tmp && verified; then
   chmod +x bin/herdr-nvim.tmp
   # The release binary is built on ubuntu-latest (glibc ~2.39 as of this
   # writing) and dynamically linked, so it silently refuses to even start

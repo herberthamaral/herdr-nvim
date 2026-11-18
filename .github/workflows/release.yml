@@ -52,6 +52,13 @@ jobs:
       - run: cargo build --release --target ${{ matrix.target }}
       - run: cp target/${{ matrix.target }}/release/herdr-nvim${{ matrix.exe }} herdr-nvim-${{ matrix.target }}${{ matrix.exe }}
         shell: bash
+      # The plugin's build hooks (herdr/install.sh, herdr/install.ps1) check
+      # the binary against this before they run it. shasum (macOS), else
+      # sha256sum (Linux, Git for Windows), as bundle.sh does.
+      - run: |
+          f=herdr-nvim-${{ matrix.target }}${{ matrix.exe }}
+          if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$f"; else sha256sum "$f"; fi > "$f.sha256"
+        shell: bash
       # The Herdr app's install (install.sh and install.ps1 download it): the
       # same binary, the mod's launcher, the Lua and the app's mods, and its
       # SHA-256. Packed with bash on every runner (Git Bash on Windows; the
@@ -63,6 +70,7 @@ jobs:
           tag_name: ${{ inputs.tag }}
           files: |
             herdr-nvim-${{ matrix.target }}${{ matrix.exe }}
+            herdr-nvim-${{ matrix.target }}${{ matrix.exe }}.sha256
             herdr-nvim-app-${{ matrix.target }}.tar.gz
             herdr-nvim-app-${{ matrix.target }}.tar.gz.sha256
       # The published asset, downloaded and run by the same test that CI runs
