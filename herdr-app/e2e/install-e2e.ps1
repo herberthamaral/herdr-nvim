@@ -6,6 +6,8 @@
 # imports), and checks what a person and the app would see:
 #
 #   0. the stand-in's check fails a broken mod and passes a good one
+#  0b. on macOS and Linux, install.sh --app with the herdr TUI and no app says
+#      to use --tui, and stops before the bundle runs
 #   1. a fresh install (-NvimDownload: with no usable Neovim, which it downloads)
 #  1b. with -ScriptUrl, on Windows: install.ps1 as a person runs it, fetched
 #      with Windows PowerShell 5.1's `irm` and run from memory, never as a
@@ -443,6 +445,42 @@ function Step-StubSelfCheck {
     Assert-That ($result.Code -eq 0) "check passes the bundle's own herdr-nvim mod"
 }
 
+# install.sh on a machine with the herdr TUI and no Herdr app (macOS and
+# Linux; install.ps1 has no such check). A fake `herdr` on PATH logs its
+# arguments; nothing else herdr is on it.
+function Step-NoApp {
+    Write-Transcript "`n## 0b. install.sh --app with the herdr TUI and no Herdr app"
+    if ($IsWindows) {
+        Write-Transcript '- SKIP: install.sh is for macOS and Linux'
+        return
+    }
+    $noApp = Initialize-PrivateEnv 'noapp'
+    $fakeBin = Join-Path $Root 'noapp/fakebin'
+    $herdrLog = Join-Path $Root 'noapp/herdr-calls.log'
+    Write-Utf8 (Join-Path $fakeBin 'herdr') "#!/bin/sh`necho `"`$*`" >> '$herdrLog'`nexit 0`n"
+    $null = Invoke-Native 'chmod' @('+x', (Join-Path $fakeBin 'herdr'))
+    $nvimDir = Split-Path -Parent (Get-Command nvim -CommandType Application | Select-Object -First 1).Source
+    $environment = @{ PATH = "${fakeBin}:/usr/bin:/bin:$nvimDir"; HERDR_APP_BIN = $null }
+    foreach ($name in 'HOME', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME', 'XDG_STATE_HOME', 'HERDR_NVIM_RUNTIME_DIR', 'HERDR_NVIM_STATE_DIR') {
+        $environment[$name] = $noApp.$name
+    }
+    $environment.HERDR_APP_HOME = Join-Path $Root 'noapp/no app home'
+
+    $result = Invoke-Native 'sh' @((Join-Path $Repo 'install.sh'), '--app', '--bundle', $BundleA) $environment
+    Assert-That ($result.Code -eq 1) 'install.sh --app with no Herdr app exits 1' "exit $($result.Code)"
+    Assert-That ($result.Err.Contains('--tui')) 'it says to run it with --tui'
+    Assert-That (-not $result.Err.Contains('no Herdr app home')) 'it stops before the bundle runs (app-install never ran)'
+    Assert-That (-not (Test-Path -LiteralPath (Join-Path $noApp.XDG_DATA_HOME 'herdr-nvim'))) 'nothing written to the data folder'
+
+    $result = Invoke-Native 'sh' @((Join-Path $Repo 'install.sh'), '--app', '--bundle', $BundleA, '--', '--home', $noApp.HERDR_APP_HOME, '--app-bin', $StubApp) $environment
+    Assert-Installed $result 'install.sh --app with the app home given after --'
+
+    $result = Invoke-Native 'sh' @((Join-Path $Repo 'install.sh')) $environment
+    Assert-That ($result.Code -eq 0) 'install.sh with no flags exits 0' "exit $($result.Code)"
+    $calls = if (Test-Path -LiteralPath $herdrLog) { Get-Content -Raw -LiteralPath $herdrLog } else { '' }
+    Assert-That ($calls.Contains('plugin list')) 'with no flags it takes the TUI path (herdr plugin list)' $calls
+}
+
 function Step-FreshInstall {
     Write-Transcript "`n## 1. Fresh install through the bootstrap$(if ($NvimDownload) { ', with no usable Neovim (downloaded)' })"
     $script:PreKeys = Get-ByteContent (Get-KeysFile $Main)
@@ -869,6 +907,7 @@ try {
     $Main = Initialize-PrivateEnv 'main'
     Use-PrivateEnv $Main
     Step-StubSelfCheck
+    Step-NoApp
     Step-FreshInstall
     Step-OneLiner
     Step-ArgumentFidelity
