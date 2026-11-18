@@ -53,6 +53,10 @@ herdr plugin install ChmaraX/herdr-nvim
 # or, for a local checkout: herdr plugin link /path/to/herdr-nvim
 ```
 
+It downloads the release's prebuilt binary and checks it against the
+release's SHA-256 before it runs it. When they don't match, or the release
+has no SHA-256, it builds from source instead (Rust 1.89 or newer).
+
 On Windows, run `herdr plugin install` yourself (`install.sh` is for macOS
 and Linux), and `herdr plugin update chmarax.herdr-nvim` to upgrade; open
 sidebars can stay open. It downloads the prebuilt x64 binary, so it needs no Rust. On

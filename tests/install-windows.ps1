@@ -66,6 +66,15 @@ function Assert-Installed([string]$dir) {
 
 function Assert-NoDownloadLeft([string]$dir) {
     Assert "no staged exe left in bin\" (-not (Test-Path -LiteralPath (Join-Path $dir "bin\herdr-nvim.new.exe")))
+    Assert "no staged .sha256 left in bin\" (-not (Test-Path -LiteralPath (Join-Path $dir "bin\herdr-nvim.new.exe.sha256")))
+}
+
+function Test-Published([string]$url) {
+    (Invoke-Captured "curl.exe" "--fail --silent --show-error --location --head --output NUL $url" $repo $true).Exit -eq 0
+}
+
+function Get-Sha256([string]$path) {
+    (Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLowerInvariant()
 }
 
 function Get-AsideCount([string]$dir) {
@@ -82,9 +91,9 @@ $builtFromSource = "target\release\herdr-nvim.exe"
 $version = (Select-String -LiteralPath (Join-Path $repo "herdr-plugin.toml") -Pattern '^version = "(.*)"' |
     Select-Object -First 1).Matches[0].Groups[1].Value
 
-Write-Host "== release v$version has the Windows binary: install.ps1 downloads it, no cargo needed"
+Write-Host "== release v$version has the Windows binary and its .sha256: install.ps1 downloads it, no cargo needed"
 $url = "https://github.com/ChmaraX/herdr-nvim/releases/download/v$version/herdr-nvim-x86_64-pc-windows-msvc.exe"
-$published = (Invoke-Captured "curl.exe" "--fail --silent --show-error --location --head --output NUL $url" $repo $true).Exit -eq 0
+$published = (Test-Published $url) -and (Test-Published "$url.sha256")
 if ($published) {
     $dir = New-Checkout $null
     $r = Invoke-Hook $dir $false
@@ -94,12 +103,113 @@ if ($published) {
     Assert-NoDownloadLeft $dir
 }
 elseif ($RequirePrebuilt) {
-    Assert "v$version has the Windows binary on GitHub ($url)" $false
+    Assert "v$version has the Windows binary and its .sha256 on GitHub ($url)" $false
 }
 else {
-    Write-Host "  skip  v$version has no Windows binary on GitHub (released before it existed, or not released yet)"
+    Write-Host "  skip  v$version has no Windows binary or no .sha256 on GitHub (released before they existed, or not released yet)"
 }
 if ($RequirePrebuilt) { Finish }
+
+# A stand-in release served on 127.0.0.1, so the cases below control the
+# binary and its .sha256. The stand-in binary answers the probe like the real
+# one (no argument: exit 2) and leaves a mark, so a case can tell whether it
+# ever ran.
+$serve = Join-Path ([IO.Path]::GetTempPath()) ("herdr-nvim-release-" + [Guid]::NewGuid().ToString("N").Substring(0, 8))
+$release = Join-Path $serve "v$version"
+New-Item -ItemType Directory -Path $release | Out-Null
+$asset = "herdr-nvim-x86_64-pc-windows-msvc.exe"
+$fakeSource = Join-Path $serve "fake.rs"
+[IO.File]::WriteAllText($fakeSource, 'fn main() { let _ = std::fs::write(std::env::var("HERDR_NVIM_TEST_MARKER").unwrap(), ""); std::process::exit(2) }')
+$fake = Join-Path $serve "fake.exe"
+$built = Invoke-Captured "rustc" "-o `"$fake`" `"$fakeSource`"" $serve $true
+if ($built.Exit -ne 0) { throw "could not build the stand-in binary" }
+$marker = Join-Path $serve "ran"
+$env:HERDR_NVIM_TEST_MARKER = $marker
+$port = (& python -c "import socket; s = socket.socket(); s.bind(('127.0.0.1', 0)); print(s.getsockname()[1])").Trim()
+$server = Start-Process -FilePath "python" -ArgumentList "-m", "http.server", "--bind", "127.0.0.1", "--directory", "`"$serve`"", $port -WindowStyle Hidden -PassThru
+foreach ($i in 1..50) {
+    if ((Invoke-Captured "curl.exe" "--fail --silent --output NUL http://127.0.0.1:$port/" $repo $true).Exit -eq 0) { break }
+    Start-Sleep -Milliseconds 200
+}
+
+# Puts the stand-in binary in the release with a .sha256 of the given kind.
+function Publish([string]$kind) {
+    $exe = Join-Path $release $asset
+    Copy-Item -LiteralPath $fake -Destination $exe -Force
+    $sumFile = "$exe.sha256"
+    Remove-Item -LiteralPath $sumFile -Force -ErrorAction SilentlyContinue
+    if ($kind -eq "none") { return }
+    $sum = Get-Sha256 $exe
+    $line = switch ($kind) {
+        "good" { "$sum  $asset`n" }
+        "wrong" { ("0" * 64) + "  $asset`n" }
+        "upper-crlf" { $sum.ToUpperInvariant() + "  $asset`r`n" }
+        "binary-mode" { "$sum *$asset`n" }
+    }
+    [IO.File]::WriteAllText($sumFile, $line)
+}
+
+function Invoke-StandIn([string]$dir) {
+    Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue
+    Invoke-Hook $dir $false
+}
+
+$env:HERDR_NVIM_RELEASE_BASE = "http://127.0.0.1:$port"
+try {
+    Write-Host "== the stand-in binary matches its SHA-256: installed, no cargo needed"
+    Publish "good"
+    $dir = New-Checkout $null
+    $r = Invoke-StandIn $dir
+    Assert "exit 0" ($r.Exit -eq 0)
+    $exe = Join-Path $dir "bin\herdr-nvim.exe"
+    Assert "bin\herdr-nvim.exe is the release's binary" ((Test-Path -LiteralPath $exe) -and (Get-Sha256 $exe) -eq (Get-Sha256 $fake))
+    Assert-NoDownloadLeft $dir
+
+    foreach ($kind in "upper-crlf", "binary-mode") {
+        Write-Host "== a .sha256 written as $kind still matches"
+        Publish $kind
+        $dir = New-Checkout $null
+        $r = Invoke-StandIn $dir
+        Assert "exit 0" ($r.Exit -eq 0)
+        $exe = Join-Path $dir "bin\herdr-nvim.exe"
+        Assert "bin\herdr-nvim.exe is the release's binary" ((Test-Path -LiteralPath $exe) -and (Get-Sha256 $exe) -eq (Get-Sha256 $fake))
+    }
+
+    Write-Host "== wrong SHA-256, no cargo: refused, the download never runs"
+    Publish "wrong"
+    $dir = New-Checkout $null
+    $r = Invoke-StandIn $dir
+    Assert "exit non-zero" ($r.Exit -ne 0)
+    Assert "the error names the SHA-256" ($r.Stderr -match "does not match its SHA-256")
+    Assert "the download never ran" (-not (Test-Path -LiteralPath $marker))
+    Assert "nothing installed" (-not (Test-Path -LiteralPath (Join-Path $dir "bin\herdr-nvim.exe")))
+    Assert-NoDownloadLeft $dir
+
+    Write-Host "== wrong SHA-256 on an upgrade, no cargo: the installed exe stays"
+    $dir = New-Checkout $null
+    $exe = Join-Path $dir "bin\herdr-nvim.exe"
+    New-Item -ItemType Directory -Force -Path (Join-Path $dir "bin") | Out-Null
+    [IO.File]::WriteAllText($exe, "the exe from before")
+    $before = Get-Sha256 $exe
+    $r = Invoke-StandIn $dir
+    Assert "exit non-zero" ($r.Exit -ne 0)
+    Assert "the download never ran" (-not (Test-Path -LiteralPath $marker))
+    Assert "bin\herdr-nvim.exe is unchanged" ((Get-Sha256 $exe) -eq $before)
+
+    Write-Host "== the release has no .sha256, no cargo: refused, the download never runs"
+    Publish "none"
+    $dir = New-Checkout $null
+    $r = Invoke-StandIn $dir
+    Assert "exit non-zero" ($r.Exit -ne 0)
+    Assert "the error says there is no SHA-256" ($r.Stderr -match "no SHA-256")
+    Assert "the download never ran" (-not (Test-Path -LiteralPath $marker))
+    Assert "nothing installed" (-not (Test-Path -LiteralPath (Join-Path $dir "bin\herdr-nvim.exe")))
+    Assert-NoDownloadLeft $dir
+}
+finally {
+    Remove-Item env:HERDR_NVIM_RELEASE_BASE -ErrorAction SilentlyContinue
+    Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
+}
 
 Write-Host "== no Windows binary for this version (404): builds from source with the MSVC cargo finds"
 $built = New-Checkout "0.0.0"
