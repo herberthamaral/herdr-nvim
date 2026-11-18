@@ -111,3 +111,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: plugin install tests
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/install-windows.ps1
+
+  # The plugin's macOS/Linux build hook, the same way: the download checked
+  # against its SHA-256 before it runs, and the source-build fallback.
+  plugin-install-unix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: plugin install tests
+        run: bash tests/install-unix.sh

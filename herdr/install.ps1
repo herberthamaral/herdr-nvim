@@ -90,16 +90,50 @@ function Save-Url([string]$url, [string]$path) {
     $http
 }
 
+# The download matches the .sha256 the release publishes beside it. Checked
+# before anything runs it (the probe below does): a release without one is
+# treated like a mismatch, so a stripped .sha256 can't switch the check off.
+function Test-Sha256([string]$url, [string]$path) {
+    $sumFile = "$path.sha256"
+    try {
+        $http = Save-Url "$url.sha256" $sumFile
+        if ($http -ne "200") {
+            Say "v$version publishes no SHA-256 for herdr-nvim-$target.exe (HTTP $http); not running the download"
+            return $false
+        }
+        # `<hash>  <name>`, or `<hash> *<name>`; either case; maybe a CRLF.
+        $want = (([IO.File]::ReadAllText($sumFile).Trim() -split '\s+')[0]).ToLowerInvariant()
+        $sha = [Security.Cryptography.SHA256]::Create()
+        $stream = [IO.File]::OpenRead($path)
+        try { $got = (($sha.ComputeHash($stream) | ForEach-Object { $_.ToString("x2") }) -join "") }
+        finally { $stream.Dispose(); $sha.Dispose() }
+        if ($got -ne $want) {
+            Say "the download does not match its SHA-256; not running it"
+            return $false
+        }
+        return $true
+    }
+    finally {
+        Remove-Item -LiteralPath $sumFile -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Install-Prebuilt {
     if (-not $target) {
         Say "no prebuilt binary for $arch"
         return $false
     }
-    $url = "https://github.com/ChmaraX/herdr-nvim/releases/download/v$version/herdr-nvim-$target.exe"
+    # HERDR_NVIM_RELEASE_BASE is for tests/install-windows.ps1, which serves a
+    # stand-in release; nothing else sets it.
+    $base = if ($env:HERDR_NVIM_RELEASE_BASE) { $env:HERDR_NVIM_RELEASE_BASE } else { "https://github.com/ChmaraX/herdr-nvim/releases/download" }
+    $url = "$base/v$version/herdr-nvim-$target.exe"
     $http = Save-Url $url $staged
     if ($http -ne "200") {
         if ($http -eq "404") { $script:notPublished = $true }
         Say "could not download $url (HTTP $http)"
+        return $false
+    }
+    if (-not (Test-Sha256 $url $staged)) {
         return $false
     }
     # Every build prints usage and exits 2 when run with no arguments, so
