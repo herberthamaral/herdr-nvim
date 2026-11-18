@@ -1,8 +1,8 @@
 #!/bin/sh
 # herdr-nvim's installer, for the Herdr desktop app, the herdr TUI, or both:
 #
-#   curl -fsSL https://raw.githubusercontent.com/ChmaraX/herdr-nvim/main/install.sh | sh
-#   curl -fsSL https://raw.githubusercontent.com/ChmaraX/herdr-nvim/main/install.sh | sh -s -- --app
+#   curl -fsSL https://raw.githubusercontent.com/herberthamaral/herdr-nvim/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/herberthamaral/herdr-nvim/main/install.sh | sh -s -- --app
 #
 #   install.sh [--app] [--tui] [--uninstall] [--install-nvim] [--version vX.Y.Z] [--bundle FILE] [-- app options]
 #
@@ -18,11 +18,11 @@
 # Without Neovim 0.10+ it asks to install it (Homebrew's, else Neovim's own
 # release, no sudo); --install-nvim says yes up front (no one to ask).
 #
-# TUI: `herdr plugin install ChmaraX/herdr-nvim` (or `herdr plugin update`);
+# TUI: `herdr plugin install herberthamaral/herdr-nvim` (or `herdr plugin update`);
 # its keys are bound by hand, as the README says.
 set -eu
 
-repo=ChmaraX/herdr-nvim
+repo=herberthamaral/herdr-nvim
 plugin=chmarax.herdr-nvim
 app= tui= uninstall= version= bundle= install_nvim=
 die() { echo "herdr-nvim: $*" >&2; exit 1; }
@@ -126,7 +126,7 @@ install_tui() {
     herdr plugin update --yes "$plugin"
     say "updated the TUI plugin"
   else
-    herdr plugin install --yes "$repo"
+    herdr plugin install --yes --ref qa/fork "$repo"
     say "installed the TUI plugin; bind its keys in ~/.config/herdr/config.toml (https://github.com/$repo#herdr-tui)"
   fi
 }

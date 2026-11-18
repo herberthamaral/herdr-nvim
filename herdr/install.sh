@@ -16,7 +16,7 @@ case "$(uname -s)-$(uname -m)" in
 esac
 # HERDR_NVIM_RELEASE_BASE is for tests/install-unix.sh, which serves a
 # stand-in release; nothing else sets it.
-base=${HERDR_NVIM_RELEASE_BASE:-https://github.com/ChmaraX/herdr-nvim/releases/download}
+base=${HERDR_NVIM_RELEASE_BASE:-https://github.com/herberthamaral/herdr-nvim/releases/download}
 url="${base}/v${version}/herdr-nvim-${target}"
 
 build_from_source() {

@@ -1,8 +1,8 @@
 # herdr-nvim's installer on Windows, for the Herdr desktop app, the herdr TUI,
 # or both. Windows PowerShell 5.1 or PowerShell 7; no Git Bash, no admin.
 #
-#   irm https://raw.githubusercontent.com/ChmaraX/herdr-nvim/main/install.ps1 | iex
-#   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/ChmaraX/herdr-nvim/main/install.ps1))) -App -InstallNvim
+#   irm https://raw.githubusercontent.com/herberthamaral/herdr-nvim/main/install.ps1 | iex
+#   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/herberthamaral/herdr-nvim/main/install.ps1))) -App -InstallNvim
 #
 #   install.ps1 [-App] [-Tui] [-Uninstall] [-Force] [-InstallNvim] [-Version vX.Y.Z] [-Bundle FILE]
 #               [-AppHome DIR] [-AppBin PATH] [-PanelWidth PX] [-Tree native|nvim] [-- more app options]
@@ -17,7 +17,7 @@
 # yes up front (no one to ask). -Uninstall takes it all out (-Force: also
 # nvims with unsaved work) and keeps the Neovim it downloaded.
 #
-# TUI: `herdr plugin install ChmaraX/herdr-nvim` (or `herdr plugin update`).
+# TUI: `herdr plugin install herberthamaral/herdr-nvim` (or `herdr plugin update`).
 
 # Everything runs in this one script block's scope: under `irm | iex` the
 # script runs in the caller's session, whose variables and settings it must
@@ -51,7 +51,7 @@ try {
     Set-StrictMode -Version 2.0
     $ErrorActionPreference = "Stop"
     $ProgressPreference = "SilentlyContinue"
-    $repo = "ChmaraX/herdr-nvim"
+    $repo = "herberthamaral/herdr-nvim"
     $plugin = "chmarax.herdr-nvim"
 
     function Say([string]$message) { [Console]::Out.WriteLine("herdr-nvim: $message") }

@@ -125,7 +125,7 @@ function Install-Prebuilt {
     }
     # HERDR_NVIM_RELEASE_BASE is for tests/install-windows.ps1, which serves a
     # stand-in release; nothing else sets it.
-    $base = if ($env:HERDR_NVIM_RELEASE_BASE) { $env:HERDR_NVIM_RELEASE_BASE } else { "https://github.com/ChmaraX/herdr-nvim/releases/download" }
+    $base = if ($env:HERDR_NVIM_RELEASE_BASE) { $env:HERDR_NVIM_RELEASE_BASE } else { "https://github.com/herberthamaral/herdr-nvim/releases/download" }
     $url = "$base/v$version/herdr-nvim-$target.exe"
     $http = Save-Url $url $staged
     if ($http -ne "200") {

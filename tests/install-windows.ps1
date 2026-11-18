@@ -92,7 +92,7 @@ $version = (Select-String -LiteralPath (Join-Path $repo "herdr-plugin.toml") -Pa
     Select-Object -First 1).Matches[0].Groups[1].Value
 
 Write-Host "== release v$version has the Windows binary and its .sha256: install.ps1 downloads it, no cargo needed"
-$url = "https://github.com/ChmaraX/herdr-nvim/releases/download/v$version/herdr-nvim-x86_64-pc-windows-msvc.exe"
+$url = "https://github.com/herberthamaral/herdr-nvim/releases/download/v$version/herdr-nvim-x86_64-pc-windows-msvc.exe"
 $published = (Test-Published $url) -and (Test-Published "$url.sha256")
 if ($published) {
     $dir = New-Checkout $null
