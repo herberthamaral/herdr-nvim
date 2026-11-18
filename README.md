@@ -59,6 +59,8 @@ at github.com/ChmaraX/herdr-nvim*, or run:
 curl -fsSL https://raw.githubusercontent.com/ChmaraX/herdr-nvim/main/install.sh | sh -s -- --app
 ```
 
+Using the herdr TUI instead? Run it with `--tui` ([TUI.md › Install](TUI.md#install)).
+
 On Windows, in PowerShell (5.1 or 7; no Git Bash, no admin):
 
 ```powershell
