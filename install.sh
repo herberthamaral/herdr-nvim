@@ -131,5 +131,20 @@ install_tui() {
   fi
 }
 
+# --app where install.sh finds no app (have_app): say what to run instead,
+# before downloading anything. An app home or binary given after -- (or in
+# HERDR_APP_BIN) is the person's word that there is one.
+app_given() {
+  [ -z "${HERDR_APP_BIN:-}" ] || return 0
+  for a in "$@"; do
+    case $a in --home|--app-bin) return 0 ;; esac
+  done
+  return 1
+}
+if [ -n "$app" ] && ! app_given "$@" && ! have_app; then
+  have_tui && die "found the herdr TUI but not the Herdr app; for the TUI, run this again with --tui instead of --app (https://github.com/$repo/blob/main/TUI.md#install)"
+  die "found no Herdr app (no herdr-app on PATH, no Herdr.app, no ${HERDR_APP_HOME:-$HOME/.config/herdr-app}); install it first (https://herdr.dev), or pass its home after --: -- --home DIR"
+fi
+
 [ -z "$app" ] || install_app "$@"
 [ -z "$tui" ] || install_tui
