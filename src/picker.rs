@@ -1136,4 +1136,86 @@ mod tests {
             "multi-term 'cargo toml' should surface Cargo.toml via fff"
         );
     }
+
+    /// What a typed query shows first when two files match it equally well
+    /// and one has uncommitted changes: that one. The fff tier ranks it
+    /// higher from its git status, which libgit2 reads from HEAD's commit
+    /// and tree, stored zlib-compressed: the one place herdr-nvim runs zlib
+    /// (libz-sys, through git2). fff also ranks newer files higher, so the
+    /// changed file here is the older one: only its git status can move it
+    /// ahead. Git status reaches fff on a background thread after the scan,
+    /// and nothing says when, so the second check queries until the edited
+    /// file comes first and fails only if it hasn't after 10 s.
+    #[test]
+    fn typed_query_puts_a_file_with_uncommitted_changes_first() {
+        use std::time::{Duration, Instant, SystemTime};
+
+        let repo = std::env::temp_dir().join(format!("hnv-picker-rank-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&repo);
+        for dir in ["older", "newer"] {
+            std::fs::create_dir_all(repo.join(dir)).unwrap();
+            std::fs::write(repo.join(dir).join("notes.md"), "same\n").unwrap();
+        }
+        let git = |args: &[&str]| {
+            let ok = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&repo)
+                .args(["-c", "user.name=t", "-c", "user.email=t@example.com"])
+                .args(["-c", "commit.gpgsign=false"])
+                .args(args)
+                .status()
+                .unwrap();
+            assert!(ok.success(), "git {args:?}");
+        };
+        git(&["init", "-q"]);
+        git(&["add", "."]);
+        git(&["commit", "-q", "--no-verify", "-m", "one"]);
+        let hour_ago = SystemTime::now() - Duration::from_secs(3600);
+        let modified = |dir: &str, time: SystemTime| {
+            let file = std::fs::File::options()
+                .write(true)
+                .open(repo.join(dir).join("notes.md"))
+                .unwrap();
+            file.set_modified(time).unwrap();
+        };
+        modified("older", hour_ago);
+        modified("newer", SystemTime::now());
+
+        let cwd = repo.to_str().unwrap().to_owned();
+        let dirs = ["older", "newer"];
+        let cands: Vec<Candidate> = dirs
+            .iter()
+            .map(|dir| repo_cand(&format!("{cwd}/{dir}/notes.md")))
+            .collect();
+        let displays = displays_of(&cands, &cwd);
+        // The file the picker shows first for "notes".
+        let first_row = |fff: &FffIndex| {
+            let matches = compute_matches_fff(&cands, &displays, "notes", fff);
+            matches.first().map_or("", |m| dirs[m.index])
+        };
+
+        // Neither file has changes, so git status moves neither: one query
+        // (after the scan, which search waits for) is the settled order.
+        let fff = FffIndex::open(&cwd, false).expect("fff index");
+        assert_eq!(
+            first_row(&fff),
+            "newer",
+            "both clean: newer/notes.md comes first"
+        );
+
+        std::fs::write(repo.join("older/notes.md"), "changed\n").unwrap();
+        modified("older", hour_ago);
+        let fff = FffIndex::open(&cwd, false).expect("fff index");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut first = first_row(&fff);
+        while first != "older" && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(50));
+            first = first_row(&fff);
+        }
+        assert_eq!(
+            first, "older",
+            "older/notes.md has uncommitted changes, so it comes first"
+        );
+        let _ = std::fs::remove_dir_all(&repo);
+    }
 }
